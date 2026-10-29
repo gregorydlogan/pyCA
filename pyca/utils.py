@@ -20,6 +20,7 @@ import pycurl
 import time
 from io import BytesIO as bio
 from urllib.parse import quote as urlquote
+from urllib.parse import urlencode
 
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ def http_request(url, post_data=None, timeout=None):
         curl.setopt(curl.TIMEOUT, config('http', 'timeout'))
 
     if post_data:
-        curl.setopt(curl.HTTPPOST, post_data)
+        curl.setopt(curl.POSTFIELDS, post_data)
     curl.setopt(curl.WRITEFUNCTION, buf.write)
     logger.debug('Using authentication method %s',
                  config('server')['auth_method'])
@@ -171,11 +172,37 @@ def register_ca(status='idle'):
     if not service_endpoint:
         logger.warning('Missing endpoint for updating agent status.')
         return
-    params = [('address', config('ui', 'url')), ('state', status)]
+    params = [('state', status)]
     name = urlquote(config('agent', 'name').encode('utf-8'), safe='')
     url = f'{service_endpoint[0]}/agents/{name}'
     try:
-        response = http_request(url, params).decode('utf-8')
+        response = http_request(url, urlencode(dict(params))).decode('utf-8')
+        if response:
+            logger.info(response)
+    except pycurl.error as e:
+        logger.warning('Could not set agent state to %s: %s', status, e)
+
+    params = {'configuration': dict([
+            ('address', config('ui', 'url')),
+            ('capture.device.names', 'alpha,beta'),
+            ('vendor.name', 'pyca'),
+            ('vendor.model', 'pyca'),
+            ('vendor.hardware', 'git_sha'),
+            ('vendor.firmware', 'git_sha'),
+            ('capture.local.capable', '1'),
+            ('capture.local.canstartpaused', '0'),
+            ('capture.stream.capable', '1'),
+            ('capture.stream.canstartpaused', '1'),
+            ('capture.stream.configuration', ",".join(['a','b','c'])),
+            ('capture.device.positions', ",".join(['d','e','f'])),
+            ('capture.device.content', ",".join(['g','h','i'])),
+            ('X-pyca-thing1', 'vendor extensions woo'),
+            ('X-pyca.needsonly', 'X- prefix')
+            ])}
+    name = urlquote(config('agent', 'name').encode('utf-8'), safe='')
+    url = f'{service_endpoint[0]}/agents/{name}/configuration'
+    try:
+        response = http_request(url, urlencode(dict(params))).decode('utf-8')
         if response:
             logger.info(response)
     except pycurl.error as e:
